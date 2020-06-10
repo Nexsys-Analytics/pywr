@@ -7,6 +7,7 @@ from pywr.parameters import (
     load_parameter,
     load_parameter_values,
     FlowDelayParameter,
+    Parameter,
 )
 from pywr.domains import Domain
 import networkx as nx
@@ -609,6 +610,8 @@ class AnnualVirtualStorage(VirtualStorage):
 
     """
 
+    __parameter_attributes__ = ("min_volume", "max_volume", "reset_month", "reset_day")
+
     def __init__(self, *args, **kwargs):
         self.reset_day = kwargs.pop("reset_day", 1)
         self.reset_month = kwargs.pop("reset_month", 1)
@@ -623,6 +626,11 @@ class AnnualVirtualStorage(VirtualStorage):
 
         super(AnnualVirtualStorage, self).__init__(*args, **kwargs)
 
+    def setup(self, model):
+        super().setup(model)
+        self._reset_month_int = int(self.reset_month.get_constant_value()) if isinstance(self.reset_month, Parameter) else int(self.reset_month)
+        self._reset_day_int = int(self.reset_day.get_constant_value()) if isinstance(self.reset_day, Parameter) else int(self.reset_day)
+
     def reset(self):
         super(AnnualVirtualStorage, self).reset()
         self._last_reset_year = None
@@ -631,8 +639,8 @@ class AnnualVirtualStorage(VirtualStorage):
         super(AnnualVirtualStorage, self).before(ts)
 
         if ts.index == 0:
-            if ts.month > self.reset_month or (
-                ts.month == self.reset_month and ts.day > self.reset_day
+            if ts.month > self._reset_month_int or (
+                ts.month == self._reset_month_int and ts.day > self._reset_day_int
             ):
                 # Assume we reset before the model started
                 self._last_reset_year = ts.year
@@ -641,8 +649,8 @@ class AnnualVirtualStorage(VirtualStorage):
         if ts.year != self._last_reset_year:
             # I.e. we're in a new year and ...
             # ... we're at or past the reset month/day
-            if ts.month > self.reset_month or (
-                ts.month == self.reset_month and ts.day >= self.reset_day
+            if ts.month > self._reset_month_int or (
+                ts.month == self._reset_month_int and ts.day >= self._reset_day_int
             ):
                 # Reset maximum volume depending on user preference ...
                 use_initial_volume = self.reset_to_initial_volume
@@ -698,17 +706,17 @@ class SeasonalVirtualStorage(AnnualVirtualStorage):
             if ts.index == 0:
                 if self._last_reset_year == ts.year:
                     # First timestep is later in year than reset date
-                    if self.end_month < self.reset_month or (
-                        self.end_month == self.reset_month
-                        and self.end_day <= self.reset_day
+                    if self.end_month < self._reset_month_int or (
+                        self.end_month == self._reset_month_int
+                        and self.end_day <= self._reset_day_int
                     ):
                         # end date is earlier in year than reset date so do not deactivate node in first year
                         self._last_active_year = ts.year
                 else:
                     # First timestep is earlier in year than reset date
-                    if self.end_month > self.reset_month or (
-                        self.end_month == self.reset_month
-                        and self.end_day >= self.reset_day
+                    if self.end_month > self._reset_month_int or (
+                        self.end_month == self._reset_month_int
+                        and self.end_day >= self._reset_day_int
                     ):
                         # end date is later in year than reset date so node needs to be deactivated
                         self.active = False

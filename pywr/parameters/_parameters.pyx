@@ -2318,8 +2318,8 @@ def load_parameter(model, data, parameter_name=None):
         try:
              parameter_type = data['type']
         except KeyError:
-            # Not a parameter, try to load values
-            return float(load_parameter_values(model, data))
+            # raise custom exception that makes the error a bit easier to interpret
+            raise TypeNotFoundError(data)
 
         try:
             parameter_name = data["name"]
