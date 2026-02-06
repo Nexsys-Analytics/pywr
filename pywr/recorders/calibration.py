@@ -22,14 +22,14 @@ class AbstractComparisonNodeRecorder(NumpyArrayNodeRecorder):
 
     def __init__(self, model, node, observed, **kwargs):
         super(AbstractComparisonNodeRecorder, self).__init__(model, node, **kwargs)
-        self.observed = observed
+        from pywr.dataframe_tools import load_dataframe
+        self.observed=load_dataframe(model, observed)
         self._aligned_observed = None
 
     def setup(self):
         super(AbstractComparisonNodeRecorder, self).setup()
         # Align the observed data to the model
         from pywr.parameters import align_and_resample_dataframe
-
         self._aligned_observed = align_and_resample_dataframe(
             self.observed, self.model.timestepper.datetime_index
         )
@@ -59,8 +59,10 @@ class MeanSquareErrorNodeRecorder(AbstractComparisonNodeRecorder):
     def values(self):
         mod = self.data
         obs = self._aligned_observed
-        return np.mean((obs - mod) ** 2, axis=0)
+        mod_flat = mod.flatten()
+        return np.mean((obs - mod_flat) ** 2, axis=0)
 
+MeanSquareErrorNodeRecorder.register()
 
 class PercentBiasNodeRecorder(AbstractComparisonNodeRecorder):
     """Recorder evaluates the percent bias between model and observed"""
@@ -87,6 +89,8 @@ class NashSutcliffeEfficiencyNodeRecorder(AbstractComparisonNodeRecorder):
         mod = self.data
         obs = self._aligned_observed
         obs_mean = np.mean(obs, axis=0)
-        return 1.0 - np.sum((obs - mod) ** 2, axis=0) / np.sum(
+        mod_flat = mod.flatten()
+        return 1.0 - np.sum((obs - mod_flat) ** 2, axis=0) / np.sum(
             (obs - obs_mean) ** 2, axis=0
         )
+NashSutcliffeEfficiencyNodeRecorder.register()
