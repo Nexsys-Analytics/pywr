@@ -601,10 +601,10 @@ class AnnualVirtualStorage(VirtualStorage):
 
     Parameters
     ----------
-    reset_day: int
-        The day of the month (0-31) to reset the volume to the initial value.
-    reset_month: int
-        The month of the year (0-12) to reset the volume to the initial value.
+    reset_day: int or Parameter
+        The day of the month (0-31) to reset the volume to the initial value. Must be a constant if a Parameter.
+    reset_month: int or Parameter
+        The month of the year (0-12) to reset the volume to the initial value. Must be a constant if a Parameter.
     reset_to_initial_volume: bool
         Reset the volume to the initial volume instead of maximum volume each year (default is False).
 
@@ -613,8 +613,8 @@ class AnnualVirtualStorage(VirtualStorage):
     __parameter_attributes__ = ("min_volume", "max_volume", "reset_month", "reset_day")
 
     def __init__(self, *args, **kwargs):
-        self.reset_day = kwargs.pop("reset_day", 1)
-        self.reset_month = kwargs.pop("reset_month", 1)
+        self.reset_day = pop_kwarg_parameter(kwargs, "reset_day", 1)
+        self.reset_month = pop_kwarg_parameter(kwargs, "reset_month", 1)
         self.reset_to_initial_volume = kwargs.pop("reset_to_initial_volume", False)
         self._last_reset_year = None
 
@@ -626,10 +626,12 @@ class AnnualVirtualStorage(VirtualStorage):
 
         super(AnnualVirtualStorage, self).__init__(*args, **kwargs)
 
-    def setup(self, model):
-        super().setup(model)
-        self._reset_month_int = int(self.reset_month.get_constant_value()) if isinstance(self.reset_month, Parameter) else int(self.reset_month)
-        self._reset_day_int = int(self.reset_day.get_constant_value()) if isinstance(self.reset_day, Parameter) else int(self.reset_day)
+    @staticmethod
+    def _resolve_int_param(value):
+        """Return integer from a plain int or a constant Parameter."""
+        if isinstance(value, Parameter):
+            return int(value.get_constant_value())
+        return value
 
     def reset(self):
         super(AnnualVirtualStorage, self).reset()
@@ -638,9 +640,12 @@ class AnnualVirtualStorage(VirtualStorage):
     def before(self, ts):
         super(AnnualVirtualStorage, self).before(ts)
 
+        reset_month = self._resolve_int_param(self.reset_month)
+        reset_day = self._resolve_int_param(self.reset_day)
+
         if ts.index == 0:
-            if ts.month > self._reset_month_int or (
-                ts.month == self._reset_month_int and ts.day > self._reset_day_int
+            if ts.month > reset_month or (
+                ts.month == reset_month and ts.day > reset_day
             ):
                 # Assume we reset before the model started
                 self._last_reset_year = ts.year
@@ -649,8 +654,8 @@ class AnnualVirtualStorage(VirtualStorage):
         if ts.year != self._last_reset_year:
             # I.e. we're in a new year and ...
             # ... we're at or past the reset month/day
-            if ts.month > self._reset_month_int or (
-                ts.month == self._reset_month_int and ts.day >= self._reset_day_int
+            if ts.month > reset_month or (
+                ts.month == reset_month and ts.day >= reset_day
             ):
                 # Reset maximum volume depending on user preference ...
                 use_initial_volume = self.reset_to_initial_volume
@@ -678,12 +683,12 @@ class SeasonalVirtualStorage(AnnualVirtualStorage):
 
     Parameters
     ----------
-    reset_day : int
+    reset_day : int or Parameter
         The day of the month (0-31) when the node starts operating and its volume is reset to the initial value or
-        maximum volume.
-    reset_month : int
+        maximum volume. Must be a constant if a Parameter.
+    reset_month : int or Parameter
         The month of the year (0-12) when the node starts operating and its volume is reset to the initial value or
-        maximum volume.
+        maximum volume. Must be a constant if a Parameter.
     reset_to_initial_volume : bool
         Reset the volume to the initial volume instead of maximum volume each year (default is False).
     end_day : int
@@ -702,21 +707,24 @@ class SeasonalVirtualStorage(AnnualVirtualStorage):
     def before(self, ts):
         super().before(ts)
 
+        reset_month = self._resolve_int_param(self.reset_month)
+        reset_day = self._resolve_int_param(self.reset_day)
+
         if ts.year != self._last_active_year:
             if ts.index == 0:
                 if self._last_reset_year == ts.year:
                     # First timestep is later in year than reset date
-                    if self.end_month < self._reset_month_int or (
-                        self.end_month == self._reset_month_int
-                        and self.end_day <= self._reset_day_int
+                    if self.end_month < reset_month or (
+                        self.end_month == reset_month
+                        and self.end_day <= reset_day
                     ):
                         # end date is earlier in year than reset date so do not deactivate node in first year
                         self._last_active_year = ts.year
                 else:
                     # First timestep is earlier in year than reset date
-                    if self.end_month > self._reset_month_int or (
-                        self.end_month == self._reset_month_int
-                        and self.end_day >= self._reset_day_int
+                    if self.end_month > reset_month or (
+                        self.end_month == reset_month
+                        and self.end_day >= reset_day
                     ):
                         # end date is later in year than reset date so node needs to be deactivated
                         self.active = False

@@ -15,24 +15,28 @@ Several different evaluation metrics are implemented in this module. Many are
 
 from ._recorders import NumpyArrayNodeRecorder
 import numpy as np
+from pywr.dataframe_tools import load_dataframe
+from pywr.dataframe_tools import align_and_resample_dataframe
+import pandas as pd
 
 
-class AbstractComparisonNodeRecorder(NumpyArrayNodeRecorder):
-    """Base class for all Recorders performing timeseries comparison of `Node` flows"""
 
-    def __init__(self, model, node, observed, **kwargs):
-        super(AbstractComparisonNodeRecorder, self).__init__(model, node, **kwargs)
-        from pywr.dataframe_tools import load_dataframe
-        self.observed=load_dataframe(model, observed)
-        self._aligned_observed = None
+class AbstractComparisonNodeRecorder(NumpyArrayNodeRecorder): 
+    """Base class for all Recorders performing timeseries comparison of `Node` flows.""" 
 
-    def setup(self):
-        super(AbstractComparisonNodeRecorder, self).setup()
-        # Align the observed data to the model
-        from pywr.parameters import align_and_resample_dataframe
-        self._aligned_observed = align_and_resample_dataframe(
-            self.observed, self.model.timestepper.datetime_index
-        )
+    def __init__(self, model, node, observed, **kwargs): 
+        super(AbstractComparisonNodeRecorder, self).__init__(model, node, **kwargs) 
+        self.observed = load_dataframe(model, observed) 
+        self._aligned_observed = None 
+
+    def setup(self): 
+        super(AbstractComparisonNodeRecorder, self).setup() 
+        # Align the observed data to the model's timestep index
+        self._aligned_observed = align_and_resample_dataframe( 
+            self.observed, self.model.timestepper.datetime_index 
+        ) 
+
+AbstractComparisonNodeRecorder.register() 
 
 
 class RootMeanSquaredErrorNodeRecorder(AbstractComparisonNodeRecorder):
@@ -53,14 +57,42 @@ class MeanAbsoluteErrorNodeRecorder(AbstractComparisonNodeRecorder):
         return np.mean(np.abs(obs - mod), axis=0)
 
 
-class MeanSquareErrorNodeRecorder(AbstractComparisonNodeRecorder):
-    """Recorder evaluates the MSE between model and observed"""
+class MeanSquareErrorNodeRecorder(AbstractComparisonNodeRecorder): 
+    """Recorder calculates the mean squared error (MSE) between model and observed across scenarios.""" 
 
-    def values(self):
-        mod = self.data
-        obs = self._aligned_observed
-        mod_flat = mod.flatten()
-        return np.mean((obs - mod_flat) ** 2, axis=0)
+    def values(self): 
+        # Simulated data from NumpyArrayNodeRecorder has shape: (time, scenarios)
+        mod = self.data 
+        
+        # Ensure observed data is a 2D numpy array of shape (time, 1) for broadcasting
+        if isinstance(self._aligned_observed, pd.DataFrame):
+            obs = self._aligned_observed.iloc[:, 0].values.reshape(-1, 1)
+        else:
+            obs = self._aligned_observed.values.reshape(-1, 1)
+
+        # Calculate MSE over the time axis (axis=0) for each scenario
+        # Using np.nanmean safely ignores missing observed records (NaNs)
+        mse = np.nanmean((mod - obs) ** 2, axis=0) 
+        
+        return mse 
+
+    def to_dataframe(self):
+        """Returns the MSE for each scenario as a pandas DataFrame."""
+        mse_values = self.values()
+        
+        # Check if the model uses multiple scenarios
+        if self.model.scenarios.combinations:
+            # Create a MultiIndex from the scenario combinations
+            index = pd.MultiIndex.from_tuples(
+                [c.labels for c in self.model.scenarios.combinations],
+                names=[s.name for s in self.model.scenarios.scenarios]
+            )
+        else:
+            # Fallback for baseline runs without explicitly defined scenarios
+            index = ["Baseline"]
+            
+        # Return a DataFrame with scenarios as the index and the node name as the column
+        return pd.DataFrame({self.node.name: mse_values}, index=index)
 
 MeanSquareErrorNodeRecorder.register()
 
