@@ -2,6 +2,44 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.31.1] - 2026-06-08
+
+### 🐛 Bug Fixes
+
+- Add get_all_min_volume and get_all_max_volume to methods to AggregatedStorage ([#1185](https://github.com/pywr/pywr/issues/1185))
+- Prevent tags from being passed to load_parameter_values function ([#1186](https://github.com/pywr/pywr/issues/1186))
+
+## [1.31.0] - 2026-05-21
+
+### 🐛 Bug Fixes
+
+- Clip aggregated storage volume in min or max when close. ([#1182](https://github.com/pywr/pywr/issues/1182))
+
+### ⚡ Performance
+
+- Improve the performance of TablesRecorder2 ([#1183](https://github.com/pywr/pywr/issues/1183))
+
+## [1.30.0] - 2026-03-17
+
+### 🚀 Features
+
+- Support Python 3.14. ([#1169](https://github.com/pywr/pywr/issues/1169))
+- Add optional support for Rds and RData files. ([#1175](https://github.com/pywr/pywr/issues/1175))
+- Allow MultiModel JSON documents to contain embedded models. ([#1177](https://github.com/pywr/pywr/issues/1177))
+- Support path-like objects in Model.load ([#1174](https://github.com/pywr/pywr/issues/1174))
+- Improve MultiModel load function signatures. ([#1178](https://github.com/pywr/pywr/issues/1178))
+- Add optional "tags" dictionary to AbstractNode. ([#1180](https://github.com/pywr/pywr/issues/1180))
+- Add TablesRecorder2 that saves additional attributes for nodes ([#1179](https://github.com/pywr/pywr/issues/1179))
+
+### 🐛 Bug Fixes
+
+- Check if a node is a LossLink in AnnualVirtualStorage to prevent GPLK exception ([#1170](https://github.com/pywr/pywr/issues/1170))
+- Use raw string for docs with backslash. ([#1176](https://github.com/pywr/pywr/issues/1176))
+
+### ⚙️ Miscellaneous Tasks
+
+- Pin Pandas<3 ([#1173](https://github.com/pywr/pywr/issues/1173))
+
 ## [1.29.0] - 2025-09-19
 
 ### 🚀 Features
