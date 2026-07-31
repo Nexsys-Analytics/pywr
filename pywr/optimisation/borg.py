@@ -47,9 +47,16 @@ class BorgWrapper(BaseOptimisationWrapper):
     model-facing responsibility into ``pywr.optimisation``.
     """
 
-    def __init__(self, source: Any, *args: Any, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        source: Any,
+        *args: Any,
+        setup_model: bool = True,
+        **kwargs: Any,
+    ) -> None:
         self._provided_model = None
         self._provided_cache = None
+        self._setup_model = setup_model
 
         if _looks_like_model(source):
             self._provided_model = source
@@ -71,7 +78,7 @@ class BorgWrapper(BaseOptimisationWrapper):
 
         if self._provided_cache is None:
             model = self._provided_model
-            if getattr(model, "dirty", True):
+            if self._setup_model and getattr(model, "dirty", True):
                 model.setup()
 
             cache = ModelCache()
