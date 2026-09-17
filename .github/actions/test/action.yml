@@ -1,0 +1,39 @@
+name: Test
+description: "Builds the GLPK-backed native extension from source and runs the pytest suite against both the route-based and edge-based GLPK solvers, in each of their safe/unsafe-API and fixed-costs/flows/factors variants. Extracted so this repo's own CI and mono's synced copy of this repo can call the identical steps locally -- see the \"Sharing CI with the monorepo\" pattern already shipped for the infrastructure repo. Deliberately scoped to the quality gate only -- LpSolve is skipped here (its own build needs the Windows-only binaries build.yml fetches for the real release wheels), and this never runs the actual multi-platform wheel build/PyPI publish/docs-deploy pipeline in build.yml, which stays upstream-shaped."
+
+inputs:
+  working-directory:
+    description: Directory containing the Python project (pyproject.toml) to build and test
+    required: false
+    default: "."
+
+runs:
+  using: composite
+  steps:
+    - name: install system dependency (glpk)
+      shell: bash
+      run: sudo apt-get update && sudo apt-get install -y libglpk-dev
+    - name: build with GLPK, without LpSolve
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        PYWR_BUILD_GLPK: "true"
+        PYWR_BUILD_LPSOLVE: "false"
+      run: pip install -e .
+    - shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: pip install pytest platypus-opt ipython jinja2 matplotlib pyreadr
+    - name: GLPK (route-based) tests
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        PYWR_SOLVER="glpk" pytest tests
+        PYWR_SOLVER_GLPK_UNSAFE_API=true PYWR_SOLVER="glpk" pytest tests
+        PYWR_SOLVER_GLPK_FIXED_COSTS_ONCE=true PYWR_SOLVER_GLPK_FIXED_FLOWS_ONCE=true PYWR_SOLVER_GLPK_FIXED_FACTORS_ONCE=true PYWR_SOLVER="glpk" pytest tests
+    - name: GLPK (edge-based) tests
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        PYWR_SOLVER="glpk-edge" pytest tests
+        PYWR_SOLVER_GLPK_UNSAFE_API=true PYWR_SOLVER="glpk-edge" pytest tests
+        PYWR_SOLVER_GLPK_FIXED_COSTS_ONCE=true PYWR_SOLVER_GLPK_FIXED_FLOWS_ONCE=true PYWR_SOLVER_GLPK_FIXED_FACTORS_ONCE=true PYWR_SOLVER="glpk-edge" pytest tests
