@@ -847,7 +847,9 @@ class TestSeasonalVirtualStorage:
         )
 
         model.setup()
-        with pytest.raises(ValueError, match="SeasonalVirtualStorage node 'licence1' does not have a"):
+        with pytest.raises(
+            ValueError, match="SeasonalVirtualStorage node 'licence1' does not have a"
+        ):
             model.step()
 
 
