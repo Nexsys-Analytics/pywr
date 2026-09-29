@@ -13,6 +13,8 @@ from pywr._core import BaseInput, BaseOutput, BaseLink
 from pywr._core cimport *
 from pywr.core import ModelStructureError
 import time
+import threading
+from collections import deque
 
 from .libglpk cimport *
 import logging
@@ -114,6 +116,32 @@ cdef void error_hook(void *info) noexcept:
     longjmp((<jmp_buf*>info)[0], <int>1)
 
 
+# GLPK keeps its memory environment per thread, and freeing a problem on a thread other than the one that created it makes GLPK abort the process. Python's garbage collector can free a solver on any thread, so a solver freed elsewhere hands its problem back to the creating thread, which deletes it the next time it touches a solver.
+_thread_state = threading.local()
+
+
+cdef object current_thread_queue():
+    """The queue of problem addresses awaiting deletion on the calling thread.
+
+    Other threads append to it (`deque.append` is atomic) and only the owning thread removes from it.
+    """
+    queue = getattr(_thread_state, "pending_deletions", None)
+    if queue is None:
+        queue = deque()
+        _thread_state.pending_deletions = queue
+    return queue
+
+
+cdef void delete_queued_problems(object queue):
+    """Delete the problems queued for the calling thread. Must only be called with that thread's own queue."""
+    cdef size_t address
+    while queue:
+        address = queue.popleft()
+        # After a GLPK error the environment is destroyed and the pointers are invalid.
+        if not has_glpk_errored:
+            glp_delete_prob(<glp_prob*>address)
+
+
 cdef class AbstractNodeData:
     """Helper class for caching node data for the solver."""
     cdef public int id
@@ -133,6 +161,7 @@ cdef class AggNodeFactorData:
 
 cdef class GLPKSolver:
     cdef glp_prob* prob
+    cdef object creator_queue
     cdef glp_smcp smcp
 
     cdef public bint use_presolve
@@ -143,12 +172,19 @@ cdef class GLPKSolver:
     cdef public bint set_fixed_factors_once
 
     def __cinit__(self):
+        self.creator_queue = current_thread_queue()
+        delete_queued_problems(self.creator_queue)
         self.prob = glp_create_prob()
 
     def __dealloc__(self):
         # If there's been an error the GLPK environment is destroyed and the pointer is invalid.
-        if not has_glpk_errored:
+        if has_glpk_errored:
+            return
+        if self.creator_queue is current_thread_queue():
+            delete_queued_problems(self.creator_queue)
             glp_delete_prob(self.prob)
+        else:
+            self.creator_queue.append(<size_t>self.prob)
 
     def __init__(self, use_presolve=False, time_limit=None, iteration_limit=None, message_level="error",
                  set_fixed_flows_once=False, set_fixed_costs_once=False, set_fixed_factors_once=False, use_unsafe_api=False):
