@@ -8,6 +8,9 @@ from pywr.solvers import solver_registry
 
 GLPK_SOLVER_NAMES = ["glpk", "glpk-edge"]
 
+# Generous bound on a child that builds and solves two two-node models; only a hang exceeds it.
+CHILD_TIMEOUT_SECONDS = 120
+
 # The child runs in its own process because the failure mode being guarded against is GLPK aborting the interpreter.
 CHILD_SCRIPT = textwrap.dedent("""
     import gc
@@ -52,7 +55,7 @@ def test_solver_freed_by_another_thread_does_not_abort(solver_name):
         [sys.executable, "-c", CHILD_SCRIPT.format(solver=solver_name)],
         capture_output=True,
         text=True,
-        timeout=120,
+        timeout=CHILD_TIMEOUT_SECONDS,
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
