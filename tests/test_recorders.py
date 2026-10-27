@@ -3606,7 +3606,8 @@ class TestGaussianKDEStorageRecorder:
         p = kde.aggregated_value()
         assert pdf.shape == (101, 1)
         assert 0 < p < 1
-        np.testing.assert_allclose(pdf.values, kde.values())
+        # The PDF is from all scenarios so the same probability is returned for each scenario combination.
+        assert_allclose(kde.values(), np.full(len(model.scenarios.combinations), p))
 
     def test_norm_kde_from_json(self, simple_storage_model):
         """Test loading normalised KDE recorder from JSON data."""
@@ -3628,4 +3629,101 @@ class TestGaussianKDEStorageRecorder:
         p = kde.aggregated_value()
         assert pdf.shape == (101, 1)
         assert 0 < p < 1
-        np.testing.assert_allclose(pdf.values, kde.values())
+        # The PDF is from all scenarios so the same probability is returned for each scenario combination.
+        assert_allclose(kde.values(), np.full(len(model.scenarios.combinations), p))
+
+    def test_norm_kde_resample_trailing_partial_period(self, simple_storage_model):
+        """Test `NormalisedGaussianKDEStorageRecorder` when the last time-step spills in to a new year.
+
+        With weekly time-steps starting on 1 January the final time-step starts on 28 December and ends in
+        the following year. Resampling to annual values then creates a trailing empty bin, which should
+        not result in NaNs being used to fit the KDE.
+        """
+        model = simple_storage_model
+        model.timestepper.start = pandas.to_datetime("2016-01-01")
+        model.timestepper.end = pandas.to_datetime("2018-12-31")
+        model.timestepper.delta = 7
+
+        # Make the inflow vary from time-step to time-step so there is variance in the annual minima.
+        rng = np.random.default_rng(42)
+        inflow = ArrayIndexedParameter(model, rng.uniform(0.0, 10.0, 200))
+        model.nodes["Input"].max_flow = inflow
+        model.nodes["Output"].max_flow = 5.0
+
+        cc = ConstantParameter(model, 0.2)
+        kde = NormalisedGaussianKDEStorageRecorder(
+            model,
+            model.nodes["Storage"],
+            parameter=cc,
+            resample_freq="Y",
+            resample_func="min",
+        )
+
+        model.run()
+
+        # Check the premise of the test; resampling does create a trailing (empty) period.
+        resampled = (
+            super(NormalisedGaussianKDEStorageRecorder, kde)
+            .to_dataframe()
+            .resample("Y")
+            .min()
+        )
+        assert len(resampled) == 4
+        assert resampled.iloc[-1].isna().all()
+
+        p = kde.aggregated_value()
+        assert isinstance(p, float)
+        assert np.isfinite(p)
+        assert np.isfinite(kde.to_dataframe().values).all()
+
+    def test_norm_kde_constant_storage(self, simple_storage_model):
+        """Test `NormalisedGaussianKDEStorageRecorder` when the storage volume never changes.
+
+        All the values are identical (no variance), which can not be fitted by a Gaussian KDE without
+        some small adjustment.
+        """
+        model = simple_storage_model
+        # Inflow equals the outflow, so the storage volume is constant.
+        model.nodes["Input"].max_flow = 8.0
+        cc = ConstantParameter(model, 0.2)
+        kde = NormalisedGaussianKDEStorageRecorder(
+            model, model.nodes["Storage"], parameter=cc
+        )
+
+        model.run()
+
+        data = super(NormalisedGaussianKDEStorageRecorder, kde).to_dataframe()
+        assert np.ptp(data.values) == 0.0
+
+        p = kde.aggregated_value()
+        assert isinstance(p, float)
+        assert np.isfinite(p)
+        assert kde.to_dataframe().shape == (101, 1)
+        assert np.isfinite(kde.to_dataframe().values).all()
+
+    def test_norm_kde_aggregated_recorder(self, simple_storage_model):
+        """Test `NormalisedGaussianKDEStorageRecorder` can be used with an `AggregatedRecorder`."""
+        model = simple_storage_model
+        model.timestepper.end = pandas.to_datetime("2016-03-31")
+        Scenario(model, "scenario", size=3)
+        rng = np.random.default_rng(1)
+        model.nodes["Input"].max_flow = ArrayIndexedParameter(
+            model, rng.uniform(0.0, 10.0, 100)
+        )
+        model.nodes["Output"].max_flow = 5.0
+
+        recorders = [
+            NormalisedGaussianKDEStorageRecorder(
+                model,
+                model.nodes["Storage"],
+                parameter=ConstantParameter(model, cc),
+                name=f"kde-{cc}",
+            )
+            for cc in (0.2, 0.4)
+        ]
+        agg = AggregatedRecorder(model, recorders, recorder_agg_func="max")
+
+        model.run()
+
+        expected = max(rec.aggregated_value() for rec in recorders)
+        assert_allclose(agg.aggregated_value(), expected)

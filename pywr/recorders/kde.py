@@ -153,7 +153,10 @@ class NormalisedGaussianKDEStorageRecorder(NumpyArrayNormalisedStorageRecorder):
         df = super().to_dataframe()
         # Apply resampling if defined
         if self.resample_func is not None and self.resample_freq is not None:
-            df = df.resample(self.resample_freq).agg(self.resample_func)
+            # Forward fill any empty bins. For example, a final time-step that starts in one
+            # period (e.g. 28 December) and ends in the next creates a trailing empty bin
+            # when resampling, which would otherwise put a NaN in the data used to fit the KDE.
+            df = df.resample(self.resample_freq).agg(self.resample_func).ffill()
 
         x = np.linspace(0.0, 1.0, self.num_pdf)
 
@@ -164,15 +167,22 @@ class NormalisedGaussianKDEStorageRecorder(NumpyArrayNormalisedStorageRecorder):
         self._pdf = pandas.DataFrame(data=pdf, index=x)
 
     def values(self):
-        """Return the estimated PDF values."""
-        return self._pdf.values
+        """Return the probability of the target volume for each scenario combination.
+
+        The KDE is fitted to the data from all scenarios, and therefore, the same value is returned for every
+        scenario combination. This is consistent with other recorders (and allows this recorder to be used
+        with, for example, an `AggregatedRecorder`). The estimated PDF is returned by `.to_dataframe()`.
+        """
+        values = np.empty(len(self.model.scenarios.combinations))
+        values[:] = self._probability_of_target_volume
+        return values
 
     def to_dataframe(self):
         """Return a `pandas.DataFrame` of the estimated PDF."""
         return self._pdf
 
     def aggregated_value(self):
-        return self._probability_of_target_volume
+        return float(self._probability_of_target_volume)
 
     def _estimate_pdf_and_target_probability(
         self, values, x
@@ -181,7 +191,16 @@ class NormalisedGaussianKDEStorageRecorder(NumpyArrayNormalisedStorageRecorder):
 
         This method can (if `self.use_reflection` is truthy) reflect the PDF at the lower and upper boundaries
         to stop the PDF leaking in to infeasible space.
+
+        If all of the values are identical (e.g. a reservoir that never changes volume) there is no variance
+        and a Gaussian KDE can not be fitted (singular covariance matrix). In this case the first value
+        is perturbed very slightly so that a (very narrow) KDE can still be estimated.
         """
+        values = np.asarray(values, dtype=float)
+        if values.size > 1 and np.ptp(values) == 0.0:
+            values = values.copy()
+            values[0] = values[0] * 0.999 if values[0] != 0.0 else 1e-5
+
         # Fit a Gaussian KDE
         kernel = stats.gaussian_kde(values)
         p = kernel.integrate_box_1d(-1.0, 0.0)
