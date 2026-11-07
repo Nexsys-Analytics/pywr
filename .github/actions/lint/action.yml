@@ -1,0 +1,15 @@
+name: Lint
+description: Runs black against the Python source tree. Extracted so this repo's own CI and mono's synced copy of this repo can call the identical steps locally -- see the "Sharing CI with the monorepo" pattern already shipped for the infrastructure repo. Deliberately scoped to the quality gate only, not the wheel-build/publish pipeline in build.yml, which stays upstream-shaped.
+
+inputs:
+  working-directory:
+    description: Directory containing the Python project to lint
+    required: false
+    default: "."
+
+runs:
+  using: composite
+  steps:
+    - uses: psf/black@stable
+      with:
+        src: ${{ inputs.working-directory }}
