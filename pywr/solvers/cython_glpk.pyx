@@ -116,7 +116,7 @@ cdef void error_hook(void *info) noexcept:
     longjmp((<jmp_buf*>info)[0], <int>1)
 
 
-# GLPK keeps its memory environment per thread, and freeing a problem on a thread other than the one that created it makes GLPK abort the process. Python's garbage collector can free a solver on any thread, so a solver freed elsewhere hands its problem back to the creating thread, which deletes it the next time it touches a solver. A queued problem is never freed if its creating thread exits or never creates or frees another solver, so it leaks; that is the only alternative to GLPK aborting the process. A queued problem is therefore never freed if its creating thread exits or never creates or frees another solver, and its memory leaks; that is the only alternative to GLPK aborting the process.
+# GLPK keeps its memory environment per thread, and freeing a problem on a thread other than the one that created it makes GLPK abort the process. Python's garbage collector can free a solver on any thread, so a solver freed elsewhere hands its problem back to the creating thread, which deletes it the next time it touches a solver. A queued problem is never freed if its creating thread exits or never creates or frees another solver, so it leaks; that is the only alternative to GLPK aborting the process.
 _thread_state = threading.local()
 
 
